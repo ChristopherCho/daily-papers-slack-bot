@@ -1,6 +1,7 @@
 import os
 
-from datetime import datetime
+from apscheduler.schedulers.blocking import BlockingScheduler
+from datetime import datetime, timedelta
 from slack_bolt import App
 from dotenv import load_dotenv
 
@@ -27,9 +28,9 @@ def post_message(message: str, message_ts: str = None):
 
 def daily_feed():
     papers = pull_hf_daily()
-    
-    today = datetime.now().strftime("%Y-%m-%d")
-    message = f"_*Today's papers ({today})*_"
+
+    last_week = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    message = f"_*Top 5 papers at {last_week}*_"
     post_message(message)
     
     for paper in papers:
@@ -58,4 +59,6 @@ def daily_feed():
 
 
 if __name__ == "__main__":
-    daily_feed()
+    scheduler = BlockingScheduler()
+    scheduler.add_job(daily_feed, "cron", hour=9, minute=0)
+    scheduler.start()

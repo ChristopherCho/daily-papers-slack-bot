@@ -35,7 +35,7 @@ def event_test(body, say):
             text=":loading:",
             thread_ts=event["thread_ts"]
         )
-        loading_message_ts = loading_message["ts"]
+        loading_message_ts = loading_message.data["ts"]
         
         # Get the original message
         response = client.conversations_replies(

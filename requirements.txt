@@ -1,0 +1,8 @@
+python-dotenv
+slack-bolt
+tiktoken
+requests
+pillow
+openai
+beautifulsoup4
+tqdm
