@@ -184,7 +184,11 @@ def add_category(ack, body):
         return
     
     category = body["text"]
-    already_exists, similar_categories = get_similar_categories(category)
+    try:
+        already_exists, similar_categories = get_similar_categories(category)
+    except Exception:
+        already_exists, similar_categories = False, []
+
     if already_exists:
         client.chat_postEphemeral(
             channel=body["channel_id"],
