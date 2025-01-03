@@ -50,10 +50,14 @@ def _get_upvotes(paper_div):
     return upvotes
 
 
-def get_title_from_arxiv(full_link):
+def get_arxiv_soup(full_link):
     response = requests.get(full_link)
     soup = BeautifulSoup(response.content, "html.parser")
-    title = soup.find("h1", class_="title")
+    return soup
+
+
+def get_title_from_arxiv(arxiv_soup):
+    title = arxiv_soup.find("h1", class_="title")
     if title:
         title = title.text.strip()
     else:
@@ -65,10 +69,8 @@ def get_title_from_arxiv(full_link):
     return title
 
 
-def get_abstract_from_arxiv(full_link):
-    response = requests.get(full_link)
-    soup = BeautifulSoup(response.content, "html.parser")
-    abstract = soup.find("blockquote", class_="abstract")
+def get_abstract_from_arxiv(arxiv_soup):
+    abstract = arxiv_soup.find("blockquote", class_="abstract")
     
     if abstract:
         abstract = abstract.text.strip()
@@ -79,6 +81,17 @@ def get_abstract_from_arxiv(full_link):
         abstract = abstract[len("Abstract:"):].strip()
 
     return abstract
+
+
+def get_categories_from_arxiv(arxiv_soup):
+    categories = arxiv_soup.find("td", class_="subjects")
+    if categories:
+        categories = categories.text.strip()
+    else:
+        categories = ""
+    categories = categories.split(";")
+
+    return categories
 
 
 def extract_paper_info(paper_div, seen_ids):
@@ -95,7 +108,10 @@ def extract_paper_info(paper_div, seen_ids):
 
     authors = _get_authors(paper_div)
     upvotes = _get_upvotes(paper_div)
-    abstract = get_abstract_from_arxiv(paper_link)
+    
+    arxiv_soup = get_arxiv_soup(paper_link)
+    abstract = get_abstract_from_arxiv(arxiv_soup)
+    categories = get_categories_from_arxiv(arxiv_soup)
     
     return {
         "title": title,
@@ -104,6 +120,7 @@ def extract_paper_info(paper_div, seen_ids):
         "link": paper_link,
         "abstract": abstract,
         "upvotes": upvotes,
+        "categories": categories,
     }
 
 
@@ -226,7 +243,7 @@ def pull_hf_daily(threshold=0, num_papers=5):
     with open(data_file_path, "w") as f:
         json.dump(papers, f, indent=2)
 
-    return papers
+    return last_week_url, papers
 
 
 def _merge_images(image_element):

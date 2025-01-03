@@ -1,12 +1,19 @@
 import os
 import re
+import requests
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
-from utils.llm_utils import get_answer
-from utils.paper_utils import download_paper, get_title_from_arxiv, get_abstract_from_arxiv
+from utils.llm_utils import get_answer, get_similar_categories
+from utils.paper_utils import (
+    download_paper, 
+    get_arxiv_soup, 
+    get_title_from_arxiv, 
+    get_abstract_from_arxiv, 
+    get_categories_from_arxiv
+)
 from utils.slack_utils import post_message, update_message, feed_paper, delete_message
 
 
@@ -96,14 +103,120 @@ def event_test(body, say):
         dp_path = paper_info["dp_path"]
 
         try:
-            title = get_title_from_arxiv(arxiv_link)
-            abstract = get_abstract_from_arxiv(arxiv_link)
+            arxiv_soup = get_arxiv_soup(arxiv_link)
+            title = get_title_from_arxiv(arxiv_soup)
+            abstract = get_abstract_from_arxiv(arxiv_soup)
+            categories = get_categories_from_arxiv(arxiv_soup)
         except Exception as e:
             update_message(client, channel, "Sorry, I couldn't get the title or abstract from the arxiv.", loading_message_ts)
             return
 
-        feed_paper(client, channel, arxiv_id, arxiv_link, title, abstract, dp_path, message_ts)
+        feed_paper(client, channel, arxiv_id, arxiv_link, title, abstract, dp_path, categories, message_ts)
         delete_message(client, channel, loading_message_ts)
+
+
+def _category_check_message_template(category, similar_categories=None):
+    blocks = []
+    if similar_categories is not None and len(similar_categories) > 0:
+        similar_categories_str = "\n".join([f'- {category.strip()}' for category in similar_categories])
+        blocks.extend([
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"I found some existing similar categories to *{category}*"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": similar_categories_str
+                }
+            }, 
+        ])
+    
+    blocks.extend([
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"Do you want to add *{category}* to the list?"
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "emoji": True,
+                        "text": "Add"
+                    },
+                    "style": "primary",
+                    "value": category,
+                    "action_id": "action_add_category"
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "emoji": True,
+                        "text": "Cancel"
+                    },
+                    "style": "danger",
+                    "value": category,
+                    "action_id": "action_cancel_add_category"
+                }
+            ]
+        }
+    ])
+
+    return {"blocks": blocks}
+
+
+@app.command("/add_category")
+def add_category(ack, body):
+    ack()
+    
+    if body["text"] == "":
+        return
+    
+    category = body["text"]
+    already_exists, similar_categories = get_similar_categories(category)
+    if already_exists:
+        client.chat_postEphemeral(
+            channel=body["channel_id"],
+            user=body["user_id"],
+            text=f"The category *{category}* already exists."
+        )
+    else:    
+        block = _category_check_message_template(category, similar_categories)    
+        client.chat_postEphemeral(
+            channel=body["channel_id"],
+            user=body["user_id"],
+            blocks=block["blocks"]
+        )
+
+
+@app.action("action_add_category")
+def add_category_action(ack, body):
+    ack()
+    category = body["actions"][0]["value"]
+    
+    with open("data/categories/custom", "a") as f:
+        f.write(f"{category}\n")
+    
+    response_url = body["response_url"]
+    requests.post(response_url, json={"text": f"The category *{category}* has been added successfully!"})
+
+
+@app.action("action_cancel_add_category")
+def cancel_add_category_action(ack, body):
+    ack()
+    response_url = body["response_url"]
+    requests.post(response_url, json={"text": "Cancelled adding the category."})
 
 
 if __name__ == "__main__":
