@@ -12,9 +12,12 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 QA_SYSTEM_PROMPT = """You are a helpful assistant specialized in Academic Paper Reading. Carefully read the paper and answer the user's question.
 Guidelines:
+- Answer the final user's question while considering the chat history.
+  - Users' questions will be in this format: `User $user_id: $question`
 - Use the full HTML of the paper to answer the user's question.
 - If the user's question is not related to the paper, politely say that you are not sure about the answer.
 - If the user's question is related to the paper, answer the question based on the paper.
+- If you need to mention the user, use the format <@UXXXXXXXXXX> (brackets, @, and 11 characters) as given in the chat history.
 - Answer in user's language.
 - Never hallucinate.
 
@@ -59,7 +62,25 @@ def postprocess_answer(answer):
     return answer
 
 
-def get_answer(arxiv_id, prompt, max_paper_tokens=32000, max_answer_tokens=16000):
+def check_history_validity(chat_history):
+    if chat_history is None:
+        return True
+
+    if len(chat_history) == 0:
+        return True
+
+    prev_role = None
+    for message in chat_history:
+        role = message["role"]
+        if role == "user" and prev_role not in [None, "assistant"]:
+            return False
+        if role == "assistant" and prev_role != "user":
+            return False
+        prev_role = role
+
+    return True
+
+def get_answer(arxiv_id, prompt, chat_history=None, max_paper_tokens=32000, max_answer_tokens=16000):
     dp_result_path = f"data/dps/{arxiv_id}.json"
     if not os.path.exists(dp_result_path):
         return "I don't have the paper you mentioned. Please check the paper ID."
@@ -78,12 +99,14 @@ def get_answer(arxiv_id, prompt, max_paper_tokens=32000, max_answer_tokens=16000
         truncated_html = html_content
     
     system_prompt = QA_SYSTEM_PROMPT.format(html=truncated_html)
+    messages = [{"role": "developer", "content": system_prompt}]
+    if check_history_validity(chat_history) and chat_history is not None:
+        messages.extend(chat_history)
+    messages.append({"role": "user", "content": prompt})
+    
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "developer", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ],
+        messages=messages,
         max_tokens=max_answer_tokens
     )
 
@@ -122,6 +145,9 @@ def get_related_subcategories(title, abstract, category):
 
 
 def get_similar_categories(category):
+    if not os.path.exists("data/categories/custom"):
+        open("data/categories/custom", "w").close()
+
     custom_categories = open("data/categories/custom").readlines()
     custom_categories = [category.strip() for category in custom_categories if category.strip() != ""]
     if len(custom_categories) == 0:

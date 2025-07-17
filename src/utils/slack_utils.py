@@ -33,6 +33,9 @@ def delete_message(client, channel, message_ts):
 
 
 def check_previous_messages(arxiv_id):
+    if not os.path.exists("data/messages.txt"):
+        open("data/messages.txt", "w").close()
+    
     with open("data/messages.txt", "r") as f:
         for line in f:
             if not line.strip():
@@ -43,6 +46,48 @@ def check_previous_messages(arxiv_id):
                 return True, message_link
 
     return False, None
+
+
+def get_chat_history(client, channel, thread_ts):
+    thread_history = client.conversations_replies(
+        channel=channel,
+        ts=thread_ts
+    )
+    
+    first_user_message_idx = None
+    for idx, message in enumerate(thread_history.data["messages"]):
+        # First message could be either user or bot. Therefore, skip it.
+        if idx == 0:
+            continue
+        
+        if "bot_id" in message:
+            continue
+        
+        first_user_message_idx = idx
+        break
+    
+    if first_user_message_idx is None:
+        return []
+    
+    bot_user_id = os.getenv("SLACK_BOT_USER_ID")
+    
+    chat_history = []
+    for message in thread_history.data["messages"][first_user_message_idx:]:
+        if message["user"] == bot_user_id:
+            content = message["text"]
+            chat_history.append({"role": "assistant", "content": content})
+        else:
+            content = message["text"]
+            if not content.startswith(f"<@{bot_user_id}>"):
+                continue
+            
+            content = content.replace(f"<@{bot_user_id}>", "").strip()
+            
+            user_id = message["user"]
+            content = f"User <@{user_id}>: {content}"
+            chat_history.append({"role": "user", "content": content})
+    
+    return chat_history
 
 
 def feed_paper(
@@ -68,13 +113,17 @@ def feed_paper(
     if len(categories) > 0:
         pattern = r"(.*)\s*\((.*)\)"
         
+        if not os.path.exists("data/categories"):
+            os.makedirs("data/categories", exist_ok=True)
+
         available_categories = os.listdir("data/categories")
         sub_category_candidates = []
-        
-        custom_categories = open("data/categories/custom").readlines()
-        custom_categories = [category.strip() for category in custom_categories if category.strip() != ""]
-        sub_category_candidates.extend(custom_categories)
-        
+
+        if os.path.exists("data/categories/custom"):
+            custom_categories = open("data/categories/custom").readlines()
+            custom_categories = [category.strip() for category in custom_categories if category.strip() != ""]
+            sub_category_candidates.extend(custom_categories)
+
         for category in categories:
             tag_match = re.match(pattern, category.strip())
             if tag_match and tag_match.group(2) in available_categories:

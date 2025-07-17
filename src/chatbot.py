@@ -14,7 +14,7 @@ from utils.paper_utils import (
     get_abstract_from_arxiv, 
     get_categories_from_arxiv
 )
-from utils.slack_utils import post_message, update_message, feed_paper, delete_message
+from utils.slack_utils import post_message, update_message, feed_paper, delete_message, get_chat_history
 
 
 load_dotenv()
@@ -62,10 +62,16 @@ def event_test(body, say):
         else:
             update_message(client, channel, "Sorry, I couldn't find the arxiv ID in the original message.", loading_message_ts)
             return
+        
+        try:
+            chat_history = get_chat_history(client, channel, thread_ts)
+        except Exception:
+            update_message(client, channel, "Sorry, I failed to get the chat history. Try with only new message.", loading_message_ts)
+            chat_history = []
 
         # Get the answer from the LLM
         try:
-            answer = get_answer(arxiv_id, question)
+            answer = get_answer(arxiv_id, question, chat_history)
             update_message(client, channel, answer, loading_message_ts)
         except Exception as e:
             update_message(client, channel, "Sorry, I couldn't get the response from the LLM.", loading_message_ts)
