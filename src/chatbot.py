@@ -54,7 +54,7 @@ def event_test(body, say):
             update_message(client, channel, "Sorry, I couldn't find the arxiv ID in the original message.", loading_message_ts)
             return
 
-        title_message = first_app_message["text"]        
+        title_message = first_app_message["text"]
         pattern = r"<https://arxiv.org/abs/(.*)\|(.*)>"
         search_result = re.search(pattern, title_message)
         if search_result:

@@ -5,12 +5,12 @@ from utils.paper_utils import get_images_from_pdf
 from utils.llm_utils import get_related_subcategories
 
 
-def post_message(client, channel, message, message_ts = None):
+def post_message(client, channel, message, message_ts = None, use_preview = False):
     message_data = client.chat_postMessage(
         channel=channel, 
         text=message,
-        unfurl_links=False,
-        unfurl_media=False,
+        unfurl_links=use_preview,
+        unfurl_media=use_preview,
         thread_ts=message_ts
     )
 
@@ -32,6 +32,19 @@ def delete_message(client, channel, message_ts):
     )
 
 
+def check_previous_messages(arxiv_id):
+    with open("data/messages.txt", "r") as f:
+        for line in f:
+            if not line.strip():
+                continue
+
+            prev_arxiv_id, message_link = line.strip().split("\t")
+            if arxiv_id == prev_arxiv_id:
+                return True, message_link
+
+    return False, None
+
+
 def feed_paper(
     client, 
     channel, 
@@ -45,6 +58,12 @@ def feed_paper(
 ):
     message = f"<{link}|*{title}*>"
     message_ts = post_message(client, channel, message, message_ts)
+    
+    prev_message_exists, prev_message_link = check_previous_messages(arxiv_id)
+    if prev_message_exists:
+        existence_message = f"Paper <{prev_message_link}|{arxiv_id}> already posted"
+        post_message(client, channel, existence_message, message_ts, use_preview=True)
+        return message_ts
 
     if len(categories) > 0:
         pattern = r"(.*)\s*\((.*)\)"
@@ -85,5 +104,9 @@ def feed_paper(
                 title=f"{arxiv_id}.{i}",
                 thread_ts=message_ts
             )
+
+    with open("data/messages.txt", "a") as f:
+        message_link = f"https://upstageai.slack.com/archives/{channel}/p{message_ts.replace('.', '')}"
+        f.write(f"{arxiv_id}\t{message_link}\n")
 
     return message_ts
